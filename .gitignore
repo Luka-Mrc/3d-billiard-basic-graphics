@@ -1,0 +1,44 @@
+# Visual Studio
+.vs/
+Debug/
+Release/
+x64/
+x86/
+*.log
+*.obj
+*.pdb
+*.ilk
+*.tlog      # Solution User Options file
+*.user      # User-specific project file
+*.log       # Log files
+*.pdb       # Program Debug Database files (if not needed for debugging)
+*.opendb
+*.tlog
+*.vsp
+*.vsw
+*.bak
+*.cache
+*.ncb
+*.aps
+*.bsc
+*.scc
+*.pcb
+*.tlb
+*.lib
+*.exp
+*.ilk
+*.mdf
+*.ldf
+*.net
+*.docstates
+*.testsettings
+*.trx
+[Aa]zure[Rr]esults/
+[Bb]uild/
+[Dd]eploy/
+[Ll]og/
+[Rr]esults/
+packages/
+.vs
+Kostur.vcxproj.user
+x64/
