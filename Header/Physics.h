@@ -11,16 +11,20 @@
 namespace PhysicsConstants
 {
     // Friction coefficient for rolling on felt
-    const float ROLLING_FRICTION = 0.98f;  // Velocity multiplier per second (higher = less friction)
+    // Value represents fraction of velocity retained per second (lower = more friction)
+    const float ROLLING_FRICTION = 0.35f;
+
+    // Linear deceleration (units/sec^2) to help balls stop cleanly at low speed
+    const float LINEAR_DECELERATION = 0.5f;
 
     // Minimum velocity before ball stops completely
-    const float MIN_VELOCITY = 0.005f;
+    const float MIN_VELOCITY = 0.01f;
 
     // Coefficient of restitution (bounciness) for ball-ball collisions
-    const float BALL_RESTITUTION = 0.95f;
+    const float BALL_RESTITUTION = 0.92f;
 
     // Coefficient of restitution for ball-cushion collisions
-    const float CUSHION_RESTITUTION = 0.8f;
+    const float CUSHION_RESTITUTION = 0.7f;
 
     // Maximum velocity (speed limit)
     const float MAX_VELOCITY = 10.0f;
@@ -108,6 +112,16 @@ private:
      * Stop balls that are moving very slowly
      */
     void StopSlowBalls(std::vector<Ball*>& balls);
+
+    /**
+     * Check if balls have fallen into pockets and deactivate them
+     */
+    void CheckPockets(std::vector<Ball*>& balls, const Table& table);
+
+    /**
+     * Check if a ball position is near a pocket gap (should skip cushion bounce)
+     */
+    bool IsInPocketGap(const Vec3& pos, const Table& table) const;
 };
 
 #endif // PHYSICS_H

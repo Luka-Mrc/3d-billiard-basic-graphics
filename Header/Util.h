@@ -110,6 +110,8 @@ struct Mat4
     static Mat4 RotateZ(float radians);
     static Mat4 Perspective(float fovY, float aspect, float nearPlane, float farPlane);
     static Mat4 LookAt(const Vec3& eye, const Vec3& target, const Vec3& up);
+
+    Mat4 Inverse() const;
 };
 
 // ============================================================================
@@ -163,6 +165,14 @@ MeshData GenerateQuadMesh();
  * @return MeshData centered at origin
  */
 MeshData GenerateBoxMesh(float width, float height, float depth);
+
+/**
+ * Generate a flat disc (circle) mesh on the XZ plane
+ * @param radius    Disc radius
+ * @param segments  Number of segments around the circle
+ * @return MeshData centered at origin, lying on Y=0
+ */
+MeshData GenerateDiscMesh(float radius, int segments = 32);
 
 // ============================================================================
 // TEXTURE LOADING

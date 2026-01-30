@@ -33,6 +33,7 @@
 #include <vector>
 #include <chrono>
 #include <thread>
+#include <cmath>
 
 // ============================================================================
 // CONSTANTS
@@ -44,7 +45,6 @@ const float TARGET_FRAME_TIME = 1.0f / TARGET_FPS;  // ~13.33ms
 const float BALL_RADIUS = 0.057f;  // Standard pool ball radius (scaled)
 const float MIN_SHOT_POWER = 1.0f;
 const float MAX_SHOT_POWER = 8.0f;
-const float SHOT_POWER_STEP = 0.5f;
 
 // ============================================================================
 // GLOBAL STATE
@@ -57,15 +57,23 @@ bool g_FaceCullingEnabled = true;
 // Input state
 bool g_KeyDPressed = false;
 bool g_KeyCPressed = false;
-bool g_KeySpacePressed = false;
 
-// Shot aiming
-float g_AimAngle = 0.0f;           // Radians
-float g_ShotPower = 3.0f;          // Current shot power
+// Mouse drag shooting state
+bool g_IsDragging = false;
+double g_MouseX = 0.0;
+double g_MouseY = 0.0;
+Vec3 g_MouseWorldPos;         // Current mouse position on table (Y=0)
+bool g_MouseOnTable = false;  // Whether mouse projects onto table area
 
 // Window dimensions (updated on resize)
 int g_WindowWidth = 1920;
 int g_WindowHeight = 1080;
+
+// Camera pointer for mouse unprojection (set in main)
+Camera* g_CameraPtr = nullptr;
+
+// Forward declaration
+Vec3 ScreenToWorld(double mouseX, double mouseY, int screenW, int screenH, const Camera& camera);
 
 // ============================================================================
 // OVERLAY QUAD FOR TEXTURE
@@ -194,30 +202,71 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         std::cout << "Face culling: " << (g_FaceCullingEnabled ? "ON" : "OFF") << std::endl;
     }
     g_KeyCPressed = (key == GLFW_KEY_C && action != GLFW_RELEASE);
+}
 
-    // Space to shoot
-    if (key == GLFW_KEY_SPACE && action == GLFW_PRESS)
+void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+{
+    if (button == GLFW_MOUSE_BUTTON_LEFT)
     {
-        g_KeySpacePressed = true;
+        if (action == GLFW_PRESS)
+        {
+            g_IsDragging = true;
+        }
+        else if (action == GLFW_RELEASE)
+        {
+            g_IsDragging = false;
+        }
     }
+}
 
-    // Arrow keys for aiming
-    if (action == GLFW_PRESS || action == GLFW_REPEAT)
-    {
-        if (key == GLFW_KEY_LEFT)
-            g_AimAngle += 0.05f;
-        if (key == GLFW_KEY_RIGHT)
-            g_AimAngle -= 0.05f;
-    }
+void CursorPositionCallback(GLFWwindow* window, double xpos, double ypos)
+{
+    g_MouseX = xpos;
+    g_MouseY = ypos;
 
-    // W/S for power adjustment
-    if (action == GLFW_PRESS || action == GLFW_REPEAT)
+    // Update world position if camera is available
+    if (g_CameraPtr)
     {
-        if (key == GLFW_KEY_W)
-            g_ShotPower = Clamp(g_ShotPower + SHOT_POWER_STEP, MIN_SHOT_POWER, MAX_SHOT_POWER);
-        if (key == GLFW_KEY_S)
-            g_ShotPower = Clamp(g_ShotPower - SHOT_POWER_STEP, MIN_SHOT_POWER, MAX_SHOT_POWER);
+        g_MouseWorldPos = ScreenToWorld(xpos, ypos, g_WindowWidth, g_WindowHeight, *g_CameraPtr);
+        // Check if mouse is roughly over the table area
+        g_MouseOnTable = (fabsf(g_MouseWorldPos.x) < 3.0f && fabsf(g_MouseWorldPos.z) < 4.0f);
     }
+}
+
+Vec3 ScreenToWorld(double mouseX, double mouseY, int screenW, int screenH, const Camera& camera)
+{
+    // Convert screen coords to NDC
+    float ndcX = (2.0f * (float)mouseX / screenW) - 1.0f;
+    float ndcY = 1.0f - (2.0f * (float)mouseY / screenH);
+
+    // Get inverse view-projection matrix
+    Mat4 vp = camera.GetViewProjectionMatrix();
+    Mat4 invVP = vp.Inverse();
+
+    // Transform near and far points from clip space to world space
+    auto transformPoint = [&invVP](float cx, float cy, float cz) -> Vec3 {
+        float out[4];
+        for (int i = 0; i < 4; i++)
+            out[i] = invVP.m[i] * cx + invVP.m[4 + i] * cy + invVP.m[8 + i] * cz + invVP.m[12 + i] * 1.0f;
+        if (fabsf(out[3]) > 0.0001f)
+        {
+            out[0] /= out[3];
+            out[1] /= out[3];
+            out[2] /= out[3];
+        }
+        return Vec3(out[0], out[1], out[2]);
+    };
+
+    Vec3 nearWorld = transformPoint(ndcX, ndcY, -1.0f);
+    Vec3 farWorld = transformPoint(ndcX, ndcY, 1.0f);
+
+    // Ray-plane intersection with Y=0
+    Vec3 rayDir = farWorld - nearWorld;
+    if (fabsf(rayDir.y) < 0.0001f)
+        return Vec3(0.0f, 0.0f, 0.0f);
+
+    float t = -nearWorld.y / rayDir.y;
+    return Vec3(nearWorld.x + t * rayDir.x, 0.0f, nearWorld.z + t * rayDir.z);
 }
 
 // ============================================================================
@@ -316,6 +365,8 @@ int main()
     // Set callbacks
     glfwSetFramebufferSizeCallback(window, FramebufferSizeCallback);
     glfwSetKeyCallback(window, KeyCallback);
+    glfwSetMouseButtonCallback(window, MouseButtonCallback);
+    glfwSetCursorPosCallback(window, CursorPositionCallback);
 
     // Disable vsync (we'll do our own frame limiting)
     glfwSwapInterval(0);
@@ -368,6 +419,7 @@ int main()
     camera.SetPosition(0.0f, 6.0f, 5.0f);
     camera.SetTarget(0.0f, 0.0f, 0.0f);
     camera.SetPerspective(45.0f, (float)g_WindowWidth / (float)g_WindowHeight, 0.1f, 100.0f);
+    g_CameraPtr = &camera;
 
     // Table
     Table table;
@@ -391,15 +443,16 @@ int main()
     Vec3 lightDir = Vec3(0.3f, 1.0f, 0.5f).Normalized();  // Light from above-front
     Vec3 lightColor(1.0f, 1.0f, 0.95f);  // Slightly warm white
 
+    // Track whether mouse was dragging last frame (to detect release)
+    bool wasDragging = false;
+
     // ==================== Main Loop ====================
     std::cout << "\n=== 3D Billiards ===" << std::endl;
     std::cout << "Controls:" << std::endl;
     std::cout << "  ESC: Exit" << std::endl;
     std::cout << "  D: Toggle depth testing" << std::endl;
     std::cout << "  C: Toggle face culling" << std::endl;
-    std::cout << "  SPACE: Shoot cue ball" << std::endl;
-    std::cout << "  LEFT/RIGHT: Aim" << std::endl;
-    std::cout << "  W/S: Adjust power" << std::endl;
+    std::cout << "  Mouse drag: Aim and shoot (drag from cue ball, further = harder)" << std::endl;
     std::cout << "===================\n" << std::endl;
 
     auto lastTime = std::chrono::high_resolution_clock::now();
@@ -415,12 +468,10 @@ int main()
         // ============ Input ============
         glfwPollEvents();
 
-        // Handle shooting
-        if (g_KeySpacePressed && physics.AllBallsStopped(balls))
+        // Handle mouse drag shooting
+        // On release: shoot the cue ball in the direction from cue ball to mouse
+        if (wasDragging && !g_IsDragging && physics.AllBallsStopped(balls))
         {
-            g_KeySpacePressed = false;
-
-            // Find cue ball (ball 0)
             Ball* cueBall = nullptr;
             for (Ball* ball : balls)
             {
@@ -433,12 +484,20 @@ int main()
 
             if (cueBall)
             {
-                // Calculate shot direction from aim angle
-                Vec3 shotDir(sinf(g_AimAngle), 0.0f, cosf(g_AimAngle));
-                physics.ApplyImpulse(cueBall, shotDir, g_ShotPower);
-                std::cout << "Shot! Power: " << g_ShotPower << std::endl;
+                Vec3 diff = g_MouseWorldPos - Vec3(cueBall->Position.x, 0.0f, cueBall->Position.z);
+                float dragDist = diff.Length();
+
+                if (dragDist > 0.05f) // Minimum drag distance to shoot
+                {
+                    Vec3 shotDir = Vec3(diff.x, 0.0f, diff.z).Normalized();
+                    float maxDragDist = 3.0f;
+                    float power = MIN_SHOT_POWER + (MAX_SHOT_POWER - MIN_SHOT_POWER) * Clamp(dragDist / maxDragDist, 0.0f, 1.0f);
+                    physics.ApplyImpulse(cueBall, shotDir, power);
+                    std::cout << "Shot! Power: " << power << std::endl;
+                }
             }
         }
+        wasDragging = g_IsDragging;
 
         // ============ Update ============
         physics.Update(balls, table, deltaTime);
@@ -477,8 +536,8 @@ int main()
             ball->Render(billiardShader, viewProjection);
         }
 
-        // Render aim line when balls are stopped
-        if (physics.AllBallsStopped(balls))
+        // Render aim line when dragging and balls are stopped
+        if (g_IsDragging && physics.AllBallsStopped(balls))
         {
             Ball* cueBall = nullptr;
             for (Ball* ball : balls)
@@ -492,32 +551,52 @@ int main()
 
             if (cueBall)
             {
-                // Draw aim indicator
-                billiardShader.SetFloat("uAmbient", 1.0f);  // Full brightness for aim line
-                billiardShader.SetFloat("uSpecular", 0.0f);
+                Vec3 cuePosXZ(cueBall->Position.x, 0.0f, cueBall->Position.z);
+                Vec3 diff = g_MouseWorldPos - cuePosXZ;
+                float dragDist = diff.Length();
 
-                // Simple aim visualization using a stretched cube
-                Vec3 aimStart = cueBall->Position;
-                Vec3 aimDir(sinf(g_AimAngle), 0.0f, cosf(g_AimAngle));
-                float lineLen = 0.3f + (g_ShotPower / MAX_SHOT_POWER) * 0.4f;
+                if (dragDist > 0.05f)
+                {
+                    Vec3 aimDir = diff.Normalized();
+                    float aimAngle = atan2f(aimDir.x, aimDir.z);
 
-                Mat4 aimModel = Mat4::Translate(aimStart + aimDir * (cueBall->Radius + lineLen / 2.0f + 0.02f)) *
-                                Mat4::RotateY(-g_AimAngle) *
-                                Mat4::Scale(0.015f, 0.015f, lineLen);
-                Mat4 aimMVP = viewProjection * aimModel;
+                    // Color based on power: green (weak) -> yellow -> red (strong)
+                    float powerFrac = Clamp(dragDist / 3.0f, 0.0f, 1.0f);
+                    Vec3 aimColor;
+                    if (powerFrac < 0.5f)
+                    {
+                        float t = powerFrac * 2.0f;
+                        aimColor = Vec3(t, 1.0f, 0.0f); // green to yellow
+                    }
+                    else
+                    {
+                        float t = (powerFrac - 0.5f) * 2.0f;
+                        aimColor = Vec3(1.0f, 1.0f - t, 0.0f); // yellow to red
+                    }
 
-                billiardShader.SetMat4("uMVP", aimMVP.Ptr());
-                billiardShader.SetMat4("uModel", aimModel.Ptr());
-                billiardShader.SetVec3("uObjectColor", 1.0f, 1.0f, 0.2f);  // Yellow aim line
+                    // Draw aim indicator
+                    billiardShader.SetFloat("uAmbient", 1.0f);
+                    billiardShader.SetFloat("uSpecular", 0.0f);
 
-                // Draw the aim indicator box
-                glBindVertexArray(g_AimVAO);
-                glDrawElements(GL_TRIANGLES, g_AimIndexCount, GL_UNSIGNED_INT, 0);
-                glBindVertexArray(0);
+                    float lineLen = 0.3f + powerFrac * 0.4f;
 
-                // Restore lighting for next frame
-                billiardShader.SetFloat("uAmbient", 0.3f);
-                billiardShader.SetFloat("uSpecular", 0.5f);
+                    Mat4 aimModel = Mat4::Translate(cueBall->Position + aimDir * (cueBall->Radius + lineLen / 2.0f + 0.02f)) *
+                                    Mat4::RotateY(-aimAngle) *
+                                    Mat4::Scale(0.015f, 0.015f, lineLen);
+                    Mat4 aimMVP = viewProjection * aimModel;
+
+                    billiardShader.SetMat4("uMVP", aimMVP.Ptr());
+                    billiardShader.SetMat4("uModel", aimModel.Ptr());
+                    billiardShader.SetVec3("uObjectColor", aimColor.Ptr());
+
+                    glBindVertexArray(g_AimVAO);
+                    glDrawElements(GL_TRIANGLES, g_AimIndexCount, GL_UNSIGNED_INT, 0);
+                    glBindVertexArray(0);
+
+                    // Restore lighting
+                    billiardShader.SetFloat("uAmbient", 0.3f);
+                    billiardShader.SetFloat("uSpecular", 0.5f);
+                }
             }
         }
 

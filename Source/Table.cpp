@@ -6,13 +6,23 @@ Table::Table()
     , Length(5.0f)         // ~5 units long (Z) - 2:1 ratio
     , CushionHeight(0.08f) // Height of cushion
     , CushionWidth(0.15f)  // Thickness of cushion
+    , PocketRadius(0.12f)
     , SurfaceColor(0.0f, 0.4f, 0.0f)    // Green felt
     , CushionColor(0.4f, 0.25f, 0.1f)   // Brown rubber/wood
     , FrameColor(0.3f, 0.15f, 0.05f)    // Dark wood frame
     , SurfaceVAO(0), SurfaceVBO(0), SurfaceEBO(0), SurfaceIndexCount(0)
     , CushionVAO(0), CushionVBO(0), CushionEBO(0), CushionIndexCount(0)
     , FrameVAO(0), FrameVBO(0), FrameEBO(0), FrameIndexCount(0)
+    , PocketVAO(0), PocketVBO(0), PocketEBO(0), PocketIndexCount(0)
 {
+    float hw = Width / 2.0f;
+    float hl = Length / 2.0f;
+    PocketPositions[0] = Vec3(-hw, 0.0f, -hl); // back-left corner
+    PocketPositions[1] = Vec3( hw, 0.0f, -hl); // back-right corner
+    PocketPositions[2] = Vec3(-hw, 0.0f,  hl); // front-left corner
+    PocketPositions[3] = Vec3( hw, 0.0f,  hl); // front-right corner
+    PocketPositions[4] = Vec3(-hw, 0.0f,  0.0f); // left side
+    PocketPositions[5] = Vec3( hw, 0.0f,  0.0f); // right side
 }
 
 Table::Table(float width, float length, float cushionHeight, float cushionWidth)
@@ -20,13 +30,23 @@ Table::Table(float width, float length, float cushionHeight, float cushionWidth)
     , Length(length)
     , CushionHeight(cushionHeight)
     , CushionWidth(cushionWidth)
+    , PocketRadius(0.12f)
     , SurfaceColor(0.0f, 0.4f, 0.0f)
     , CushionColor(0.4f, 0.25f, 0.1f)
     , FrameColor(0.3f, 0.15f, 0.05f)
     , SurfaceVAO(0), SurfaceVBO(0), SurfaceEBO(0), SurfaceIndexCount(0)
     , CushionVAO(0), CushionVBO(0), CushionEBO(0), CushionIndexCount(0)
     , FrameVAO(0), FrameVBO(0), FrameEBO(0), FrameIndexCount(0)
+    , PocketVAO(0), PocketVBO(0), PocketEBO(0), PocketIndexCount(0)
 {
+    float hw = Width / 2.0f;
+    float hl = Length / 2.0f;
+    PocketPositions[0] = Vec3(-hw, 0.0f, -hl);
+    PocketPositions[1] = Vec3( hw, 0.0f, -hl);
+    PocketPositions[2] = Vec3(-hw, 0.0f,  hl);
+    PocketPositions[3] = Vec3( hw, 0.0f,  hl);
+    PocketPositions[4] = Vec3(-hw, 0.0f,  0.0f);
+    PocketPositions[5] = Vec3( hw, 0.0f,  0.0f);
 }
 
 Table::~Table()
@@ -49,6 +69,12 @@ Table::~Table()
         glDeleteBuffers(1, &FrameVBO);
         glDeleteBuffers(1, &FrameEBO);
     }
+    if (PocketVAO != 0)
+    {
+        glDeleteVertexArrays(1, &PocketVAO);
+        glDeleteBuffers(1, &PocketVBO);
+        glDeleteBuffers(1, &PocketEBO);
+    }
 }
 
 void Table::InitMesh()
@@ -56,6 +82,7 @@ void Table::InitMesh()
     GenerateSurfaceMesh();
     GenerateCushionMesh();
     GenerateFrameMesh();
+    GeneratePocketMesh();
 }
 
 void Table::Render(Shader& shader, const Mat4& viewProjection)
@@ -80,6 +107,19 @@ void Table::Render(Shader& shader, const Mat4& viewProjection)
     shader.SetVec3("uObjectColor", FrameColor.Ptr());
     glBindVertexArray(FrameVAO);
     glDrawElements(GL_TRIANGLES, FrameIndexCount, GL_UNSIGNED_INT, 0);
+
+    // Render pockets (dark circles)
+    Vec3 pocketColor(0.02f, 0.02f, 0.02f);
+    shader.SetVec3("uObjectColor", pocketColor.Ptr());
+    glBindVertexArray(PocketVAO);
+    for (int i = 0; i < NUM_POCKETS; i++)
+    {
+        Mat4 pocketModel = Mat4::Translate(PocketPositions[i].x, 0.002f, PocketPositions[i].z);
+        Mat4 pocketMVP = viewProjection * pocketModel;
+        shader.SetMat4("uMVP", pocketMVP.Ptr());
+        shader.SetMat4("uModel", pocketModel.Ptr());
+        glDrawElements(GL_TRIANGLES, PocketIndexCount, GL_UNSIGNED_INT, 0);
+    }
 
     glBindVertexArray(0);
 }
@@ -108,6 +148,16 @@ float Table::GetMinZ() const
 float Table::GetMaxZ() const
 {
     return Length / 2.0f;
+}
+
+const Vec3* Table::GetPocketPositions() const
+{
+    return PocketPositions;
+}
+
+float Table::GetPocketRadius() const
+{
+    return PocketRadius;
 }
 
 void Table::GenerateSurfaceMesh()
@@ -220,20 +270,23 @@ void Table::GenerateCushionMesh()
         }
     };
 
-    // Four cushions around the table
-    // Cushions sit on top of the surface (Y = 0 to Y = cushionHeight)
+    // Cushions with gaps at pocket locations
+    // pg = pocket gap size (how much cushion is removed at each pocket)
+    float pg = PocketRadius * 2.0f;
 
-    // Left cushion (-X side)
-    addBox(-hw - cw, 0, -hl, -hw, ch, hl);
+    // Left cushion (-X side): split into 2 segments with gaps at corners and side pocket
+    addBox(-hw - cw, 0, -hl + pg, -hw, ch, -pg);   // left segment 1 (back corner to side pocket)
+    addBox(-hw - cw, 0,  pg,      -hw, ch, hl - pg); // left segment 2 (side pocket to front corner)
 
-    // Right cushion (+X side)
-    addBox(hw, 0, -hl, hw + cw, ch, hl);
+    // Right cushion (+X side): same pattern
+    addBox(hw, 0, -hl + pg, hw + cw, ch, -pg);      // right segment 1
+    addBox(hw, 0,  pg,      hw + cw, ch, hl - pg);   // right segment 2
 
-    // Back cushion (-Z side)
-    addBox(-hw - cw, 0, -hl - cw, hw + cw, ch, -hl);
+    // Back cushion (-Z side): one segment with corner gaps
+    addBox(-hw + pg, 0, -hl - cw, hw - pg, ch, -hl);
 
-    // Front cushion (+Z side)
-    addBox(-hw - cw, 0, hl, hw + cw, ch, hl + cw);
+    // Front cushion (+Z side): one segment with corner gaps
+    addBox(-hw + pg, 0, hl, hw - pg, ch, hl + cw);
 
     UploadMesh(mesh, CushionVAO, CushionVBO, CushionEBO, CushionIndexCount);
 }
@@ -321,6 +374,12 @@ void Table::GenerateFrameMesh()
     addBox(-hw - cw, frameBottom, hl + cw, hw + cw, frameTop, outerZ);
 
     UploadMesh(mesh, FrameVAO, FrameVBO, FrameEBO, FrameIndexCount);
+}
+
+void Table::GeneratePocketMesh()
+{
+    MeshData mesh = GenerateDiscMesh(PocketRadius, 32);
+    UploadMesh(mesh, PocketVAO, PocketVBO, PocketEBO, PocketIndexCount);
 }
 
 void Table::UploadMesh(const MeshData& mesh, GLuint& vao, GLuint& vbo, GLuint& ebo, unsigned int& indexCount)

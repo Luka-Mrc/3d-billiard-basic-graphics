@@ -21,6 +21,9 @@ void Physics::Update(std::vector<Ball*>& balls, const Table& table, float deltaT
         ResolveCushionCollisions(balls, table);
     }
 
+    // Check if any balls fell into pockets
+    CheckPockets(balls, table);
+
     // Clamp velocities and stop slow balls
     ClampVelocities(balls);
     StopSlowBalls(balls);
@@ -54,9 +57,7 @@ bool Physics::AllBallsStopped(const std::vector<Ball*>& balls) const
 
 void Physics::ApplyFriction(std::vector<Ball*>& balls, float deltaTime)
 {
-    // Friction factor per frame
-    // We want ROLLING_FRICTION to be the factor per second
-    // So per frame it's ROLLING_FRICTION^deltaTime
+    // Exponential friction: ROLLING_FRICTION is fraction retained per second
     float frictionFactor = powf(PhysicsConstants::ROLLING_FRICTION, deltaTime);
 
     for (Ball* ball : balls)
@@ -64,7 +65,18 @@ void Physics::ApplyFriction(std::vector<Ball*>& balls, float deltaTime)
         if (!ball->IsActive)
             continue;
 
+        // Exponential decay
         ball->Velocity *= frictionFactor;
+
+        // Linear deceleration to help balls stop cleanly at low speeds
+        float speed = ball->Velocity.Length();
+        if (speed > 0.0001f)
+        {
+            float reduction = PhysicsConstants::LINEAR_DECELERATION * deltaTime;
+            float newSpeed = speed - reduction;
+            if (newSpeed < 0.0f) newSpeed = 0.0f;
+            ball->Velocity = ball->Velocity * (newSpeed / speed);
+        }
     }
 }
 
@@ -140,11 +152,12 @@ void Physics::ResolveBallCollision(Ball* a, Ball* b)
     // Calculate relative velocity
     Vec3 relVel = a->Velocity - b->Velocity;
 
-    // Relative velocity along collision normal
+    // Relative velocity along collision normal (normal points from a to b)
+    // Positive = approaching, Negative = separating
     float velAlongNormal = Dot(relVel, normal);
 
-    // Only resolve if balls are approaching
-    if (velAlongNormal > 0)
+    // Only resolve if balls are approaching (positive means a moves toward b)
+    if (velAlongNormal < 0)
         return;
 
     // Calculate impulse scalar (assuming equal mass)
@@ -171,6 +184,10 @@ void Physics::ResolveCushionCollisions(std::vector<Ball*>& balls, const Table& t
     for (Ball* ball : balls)
     {
         if (!ball->IsActive)
+            continue;
+
+        // Skip cushion collision if ball is in a pocket gap area
+        if (IsInPocketGap(ball->Position, table))
             continue;
 
         float r = ball->Radius;
@@ -231,9 +248,65 @@ void Physics::StopSlowBalls(std::vector<Ball*>& balls)
         if (!ball->IsActive)
             continue;
 
-        if (ball->Velocity.Length() < PhysicsConstants::MIN_VELOCITY)
+        if (ball->Velocity.LengthSquared() < PhysicsConstants::MIN_VELOCITY * PhysicsConstants::MIN_VELOCITY)
         {
             ball->Stop();
         }
     }
+}
+
+void Physics::CheckPockets(std::vector<Ball*>& balls, const Table& table)
+{
+    const Vec3* pockets = table.GetPocketPositions();
+    float pr = table.GetPocketRadius();
+    float prSq = pr * pr;
+
+    for (Ball* ball : balls)
+    {
+        if (!ball->IsActive)
+            continue;
+
+        for (int i = 0; i < Table::NUM_POCKETS; i++)
+        {
+            // Distance check on XZ plane only
+            float dx = ball->Position.x - pockets[i].x;
+            float dz = ball->Position.z - pockets[i].z;
+            float distSq = dx * dx + dz * dz;
+
+            if (distSq < prSq)
+            {
+                if (ball->Number == 0)
+                {
+                    // Cue ball: respawn at original position
+                    ball->Position = Vec3(0.0f, ball->Radius, 2.0f);
+                    ball->Velocity = Vec3(0.0f, 0.0f, 0.0f);
+                }
+                else
+                {
+                    // Regular ball: deactivate
+                    ball->IsActive = false;
+                    ball->Velocity = Vec3(0.0f, 0.0f, 0.0f);
+                }
+                break;
+            }
+        }
+    }
+}
+
+bool Physics::IsInPocketGap(const Vec3& pos, const Table& table) const
+{
+    const Vec3* pockets = table.GetPocketPositions();
+    float pr = table.GetPocketRadius();
+    float gapThreshold = pr * 2.0f;
+
+    for (int i = 0; i < Table::NUM_POCKETS; i++)
+    {
+        float dx = pos.x - pockets[i].x;
+        float dz = pos.z - pockets[i].z;
+        float distSq = dx * dx + dz * dz;
+
+        if (distSq < gapThreshold * gapThreshold)
+            return true;
+    }
+    return false;
 }

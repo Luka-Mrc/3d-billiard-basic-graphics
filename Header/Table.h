@@ -26,6 +26,11 @@ public:
     float CushionHeight; // Height of cushions above surface
     float CushionWidth;  // Thickness of cushions
 
+    // Pocket configuration
+    static const int NUM_POCKETS = 6;
+    float PocketRadius;
+    Vec3 PocketPositions[NUM_POCKETS];
+
     // Visual properties
     Vec3 SurfaceColor;   // Green felt
     Vec3 CushionColor;   // Cushion wood/rubber color
@@ -87,6 +92,16 @@ public:
      */
     float GetMaxZ() const;
 
+    /**
+     * Get pocket positions array
+     */
+    const Vec3* GetPocketPositions() const;
+
+    /**
+     * Get pocket radius
+     */
+    float GetPocketRadius() const;
+
 private:
     // OpenGL objects for surface
     GLuint SurfaceVAO;
@@ -106,6 +121,12 @@ private:
     GLuint FrameEBO;
     unsigned int FrameIndexCount;
 
+    // OpenGL objects for pocket visuals
+    GLuint PocketVAO;
+    GLuint PocketVBO;
+    GLuint PocketEBO;
+    unsigned int PocketIndexCount;
+
     /**
      * Generate mesh for playing surface
      */
@@ -120,6 +141,11 @@ private:
      * Generate mesh for outer frame
      */
     void GenerateFrameMesh();
+
+    /**
+     * Generate mesh for pocket visuals (dark circles)
+     */
+    void GeneratePocketMesh();
 
     /**
      * Helper to upload mesh data to GPU
