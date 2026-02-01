@@ -10,6 +10,7 @@
  * - SPACE: Hit cue ball (when balls stopped)
  * - Arrow keys: Aim cue direction
  * - W/S: Adjust shot power
+ * - Scroll: changes FOV
  *
  * Requirements met:
  * - Modern OpenGL (VAO, VBO, shaders)
@@ -303,6 +304,17 @@ void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
     }
 }
 
+void ScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+{
+    if (g_CameraPtr)
+    {
+        float fovDeg = Degrees(g_CameraPtr->FOV);
+        fovDeg -= (float)yoffset * 2.0f;
+        fovDeg = Clamp(fovDeg, 10.0f, 90.0f);
+        g_CameraPtr->FOV = Radians(fovDeg);
+    }
+}
+
 void CursorPositionCallback(GLFWwindow* window, double xpos, double ypos)
 {
     g_MouseX = xpos;
@@ -451,6 +463,7 @@ int main()
     glfwSetKeyCallback(window, KeyCallback);
     glfwSetMouseButtonCallback(window, MouseButtonCallback);
     glfwSetCursorPosCallback(window, CursorPositionCallback);
+    glfwSetScrollCallback(window, ScrollCallback);
 
     // Disable vsync (we'll do our own frame limiting)
     glfwSwapInterval(0);
@@ -531,8 +544,17 @@ int main()
     InitLampMesh();
 
     // ==================== Lighting Setup ====================
-    Vec3 lightPos(0.0f, 4.0f, 0.0f);     // Overhead lamp position (raised for even coverage)
-    Vec3 lightColor(1.0f, 0.97f, 0.9f);  // Warm white
+    // Spotlight from above the table (like a real billiard hall lamp)
+    Vec3 lightPos(0.0f, 4.0f, 0.0f);      // Overhead lamp position
+    Vec3 lightDir(0.0f, -1.0f, 0.0f);     // Pointing straight down
+    Vec3 lightKA(0.15f, 0.14f, 0.13f);    // Warm ambient (low, for atmosphere)
+    Vec3 lightKD(1.0f, 0.97f, 0.9f);      // Warm white diffuse
+    Vec3 lightKS(1.0f, 1.0f, 1.0f);       // White specular highlights
+
+    // Spotlight cone angles (cosines)
+    // Inner: 30 deg covers most of the table, outer: 42 deg for soft edge falloff
+    float spotCutOff = cosf(30.0f * 3.14159265f / 180.0f);
+    float spotOuterCutOff = cosf(42.0f * 3.14159265f / 180.0f);
 
     // Light-space matrix for shadow mapping (orthographic from above)
     Mat4 lightView = Mat4::LookAt(lightPos, Vec3(0.0f, 0.0f, 0.0f), Vec3(0.0f, 0.0f, -1.0f));
@@ -638,28 +660,35 @@ int main()
         glBindTexture(GL_TEXTURE_2D, g_ShadowMapTexture);
         billiardShader.SetInt("uShadowMap", 1);
 
-        // Set lighting uniforms (point light)
-        billiardShader.SetVec3("uLightPos", lightPos.Ptr());
-        billiardShader.SetVec3("uLightColor", lightColor.Ptr());
+        // Set spotlight uniforms (Phong lighting model)
+        billiardShader.SetVec3("uLight.pos", lightPos.Ptr());
+        billiardShader.SetVec3("uLight.dir", lightDir.Ptr());
+        billiardShader.SetVec3("uLight.kA", lightKA.Ptr());
+        billiardShader.SetVec3("uLight.kD", lightKD.Ptr());
+        billiardShader.SetVec3("uLight.kS", lightKS.Ptr());
+        billiardShader.SetFloat("uLight.cutOff", spotCutOff);
+        billiardShader.SetFloat("uLight.outerCutOff", spotOuterCutOff);
+
         billiardShader.SetVec3("uViewPos", camera.Position.Ptr());
         billiardShader.SetMat4("uLightSpaceMatrix", lightSpaceMatrix.Ptr());
-        billiardShader.SetFloat("uAmbient", 0.25f);
-        billiardShader.SetFloat("uSpecular", 0.5f);
-        billiardShader.SetFloat("uShininess", 32.0f);
 
-        // Render table
+        // --- Render table (matte felt material) ---
+        billiardShader.SetVec3("uMaterial.kS", 0.1f, 0.1f, 0.1f);  // Low specular (matte felt)
+        billiardShader.SetFloat("uMaterial.shine", 8.0f);
         table.Render(billiardShader, viewProjection);
 
-        // Render balls
+        // --- Render balls (shiny resin/plastic material) ---
+        billiardShader.SetVec3("uMaterial.kS", 0.9f, 0.9f, 0.9f);  // Strong white specular highlight
+        billiardShader.SetFloat("uMaterial.shine", 64.0f);          // High shininess
         for (Ball* ball : balls)
         {
             ball->Render(billiardShader, viewProjection);
         }
 
-        // Render lamp (emissive - full ambient, no shadow)
+        // Render lamp (emissive - full ambient, bypass spotlight)
         {
-            billiardShader.SetFloat("uAmbient", 1.0f);
-            billiardShader.SetFloat("uSpecular", 0.0f);
+            billiardShader.SetVec3("uLight.kA", 1.0f, 1.0f, 1.0f);   // Full ambient = emissive
+            billiardShader.SetVec3("uMaterial.kS", 0.0f, 0.0f, 0.0f); // No specular
             Vec3 lampColor(1.0f, 0.95f, 0.85f);
             billiardShader.SetVec3("uObjectColor", lampColor.Ptr());
 
@@ -672,9 +701,8 @@ int main()
             glDrawElements(GL_TRIANGLES, g_LampIndexCount, GL_UNSIGNED_INT, 0);
             glBindVertexArray(0);
 
-            // Restore lighting for aim indicator
-            billiardShader.SetFloat("uAmbient", 0.25f);
-            billiardShader.SetFloat("uSpecular", 0.5f);
+            // Restore lighting
+            billiardShader.SetVec3("uLight.kA", lightKA.Ptr());
         }
 
         // Render aim line when dragging and balls are stopped
@@ -715,9 +743,9 @@ int main()
                         aimColor = Vec3(1.0f, 1.0f - t, 0.0f); // yellow to red
                     }
 
-                    // Draw aim indicator
-                    billiardShader.SetFloat("uAmbient", 1.0f);
-                    billiardShader.SetFloat("uSpecular", 0.0f);
+                    // Draw aim indicator (emissive)
+                    billiardShader.SetVec3("uLight.kA", 1.0f, 1.0f, 1.0f);
+                    billiardShader.SetVec3("uMaterial.kS", 0.0f, 0.0f, 0.0f);
 
                     float lineLen = 0.3f + powerFrac * 0.4f;
 
@@ -735,8 +763,7 @@ int main()
                     glBindVertexArray(0);
 
                     // Restore lighting
-                    billiardShader.SetFloat("uAmbient", 0.3f);
-                    billiardShader.SetFloat("uSpecular", 0.5f);
+                    billiardShader.SetVec3("uLight.kA", lightKA.Ptr());
                 }
             }
         }

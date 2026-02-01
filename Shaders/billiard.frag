@@ -1,4 +1,20 @@
 #version 330 core
+// Light source (spotlight from above)
+struct Light {
+    vec3 pos;           // Position
+    vec3 dir;           // Spotlight direction (normalized, pointing down)
+    vec3 kA;            // Ambient component (indirect light)
+    vec3 kD;            // Diffuse component (direct light)
+    vec3 kS;            // Specular component (highlight)
+    float cutOff;       // cos(inner cone angle)
+    float outerCutOff;  // cos(outer cone angle)
+};
+
+// Material properties
+struct Material {
+    vec3 kS;            // Specular reflectance color
+    float shine;        // Shininess (glossiness)
+};
 
 // Input from vertex shader
 in vec3 FragPos;
@@ -10,16 +26,17 @@ in vec4 FragPosLightSpace;
 out vec4 FragColor;
 
 // Uniforms
-uniform vec3 uObjectColor;    // Base color of the object
-uniform vec3 uLightPos;       // Light position in world space
-uniform vec3 uLightColor;     // Light color
-uniform vec3 uViewPos;        // Camera position for specular
-uniform float uAmbient;       // Ambient light intensity
-uniform float uSpecular;      // Specular intensity
-uniform float uShininess;     // Specular shininess exponent
+uniform Light uLight;
+uniform Material uMaterial;
+uniform vec3 uObjectColor;    // Base color (used as ambient & diffuse reflectance)
+uniform vec3 uViewPos;        // Camera position (for specular calculation)
 uniform sampler2D uShadowMap; // Shadow depth map
+uniform mat4 uLightSpaceMatrix;
 
-float ShadowCalculation(vec4 fragPosLS)
+// ============================================================================
+// Shadow calculation with PCF 5x5
+// ============================================================================
+float ShadowCalculation(vec4 fragPosLS, vec3 normal, vec3 lightDir)
 {
     // Perspective divide
     vec3 projCoords = fragPosLS.xyz / fragPosLS.w;
@@ -32,10 +49,8 @@ float ShadowCalculation(vec4 fragPosLS)
 
     float currentDepth = projCoords.z;
 
-    // Bias based on surface angle to light
-    vec3 norm = normalize(Normal);
-    vec3 lightDir = normalize(uLightPos - FragPos);
-    float bias = max(0.003 * (1.0 - dot(norm, lightDir)), 0.001);
+    // Bias based on surface angle to light (prevents shadow acne)
+    float bias = max(0.003 * (1.0 - dot(normal, lightDir)), 0.001);
 
     // PCF 5x5 for soft shadows
     float shadow = 0.0;
@@ -53,39 +68,47 @@ float ShadowCalculation(vec4 fragPosLS)
     return shadow;
 }
 
+// ============================================================================
+// Main - Phong shading model with spotlight
+// ============================================================================
 void main()
 {
-    // Normalize the normal
-    vec3 norm = normalize(Normal);
+    vec3 normal = normalize(Normal);
+    vec3 lightDir = normalize(uLight.pos - FragPos);
+    vec3 viewDir = normalize(uViewPos - FragPos);
 
-    // Point light direction
-    vec3 lightDir = normalize(uLightPos - FragPos);
+    // === Spotlight cone intensity ===
+    // theta = angle between light-to-fragment direction and spotlight direction
+    float theta = dot(lightDir, normalize(-uLight.dir));
+    float epsilon = uLight.cutOff - uLight.outerCutOff;
+    float spotIntensity = clamp((theta - uLight.outerCutOff) / epsilon, 0.0, 1.0);
 
-    // Distance attenuation (very gentle, so overhead light covers the whole table evenly)
-    float dist = length(uLightPos - FragPos);
+    // === Distance attenuation ===
+    float dist = length(uLight.pos - FragPos);
     float attenuation = 1.0 / (1.0 + 0.007 * dist + 0.002 * dist * dist);
 
-    // ============ Ambient ============
-    vec3 ambient = uAmbient * uLightColor;
+    // === Ambient (Phong model - not affected by spotlight or shadow) ===
+    vec3 resA = uLight.kA * uObjectColor;
 
-    // ============ Diffuse ============
-    float diff = max(dot(norm, lightDir), 0.0);
-    vec3 diffuse = diff * uLightColor * attenuation;
+    // === Diffuse (Phong model) ===
+    float nD = max(dot(normal, lightDir), 0.0);
+    vec3 resD = uLight.kD * (nD * uObjectColor);
 
-    // ============ Specular (Blinn-Phong) ============
-    vec3 viewDir = normalize(uViewPos - FragPos);
-    vec3 halfDir = normalize(lightDir + viewDir);
-    float spec = pow(max(dot(norm, halfDir), 0.0), uShininess);
-    vec3 specular = uSpecular * spec * uLightColor * attenuation;
+    // === Specular (Phong reflection model) ===
+    vec3 reflectDir = reflect(-lightDir, normal);
+    float s = pow(max(dot(viewDir, reflectDir), 0.0), uMaterial.shine);
+    vec3 resS = uLight.kS * (s * uMaterial.kS);
 
-    // ============ Shadow ============
-    float shadow = ShadowCalculation(FragPosLightSpace);
+    // Apply attenuation and spotlight to diffuse and specular only
+    resD *= attenuation * spotIntensity;
+    resS *= attenuation * spotIntensity;
 
-    // Shadow darkens diffuse and specular but not ambient
-    vec3 result = (ambient + (1.0 - shadow) * (diffuse + specular)) * uObjectColor;
+    // === Shadow ===
+    float shadow = ShadowCalculation(FragPosLightSpace, normal, lightDir);
 
-    // Clamp to valid range
+    // Final color: ambient always visible, diffuse+specular affected by shadow and spotlight
+    vec3 result = resA + (1.0 - shadow) * (resD + resS);
+
     result = clamp(result, 0.0, 1.0);
-
     FragColor = vec4(result, 1.0);
 }

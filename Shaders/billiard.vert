@@ -24,8 +24,9 @@ void main()
     // Calculate fragment position in world space
     FragPos = vec3(uModel * vec4(aPosition, 1.0));
 
-    // Transform normal to world space
-    Normal = mat3(uModel) * aNormal;
+    // Transform normal to world space using the normal matrix
+    // transpose(inverse(uModel)) handles non-uniform scaling correctly
+    Normal = mat3(transpose(inverse(uModel))) * aNormal;
 
     // Pass through texture coordinates
     TexCoord = aTexCoord;

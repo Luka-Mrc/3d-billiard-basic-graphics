@@ -187,27 +187,34 @@ void Table::GenerateSurfaceMesh()
 
     float hw = Width / 2.0f;
     float hl = Length / 2.0f;
+    float cw = CushionWidth;
+    float frameWidth = 0.1f; // must match GenerateFrameMesh
+
+    // Extend surface to cover entire area under cushions and frame
+    // so there are no transparent gaps at pockets or table edges
+    float ex = hw + cw + frameWidth;
+    float ez = hl + cw + frameWidth;
 
     // Playing surface is a flat quad at Y = 0
     Vertex v0, v1, v2, v3;
 
     // Bottom-left (looking down from +Y)
-    v0.position[0] = -hw; v0.position[1] = 0.0f; v0.position[2] = -hl;
+    v0.position[0] = -ex; v0.position[1] = 0.0f; v0.position[2] = -ez;
     v0.normal[0] = 0.0f;  v0.normal[1] = 1.0f;   v0.normal[2] = 0.0f;
     v0.texCoord[0] = 0.0f; v0.texCoord[1] = 0.0f;
 
     // Bottom-right
-    v1.position[0] = hw;  v1.position[1] = 0.0f; v1.position[2] = -hl;
+    v1.position[0] = ex;  v1.position[1] = 0.0f; v1.position[2] = -ez;
     v1.normal[0] = 0.0f;  v1.normal[1] = 1.0f;   v1.normal[2] = 0.0f;
     v1.texCoord[0] = 1.0f; v1.texCoord[1] = 0.0f;
 
     // Top-right
-    v2.position[0] = hw;  v2.position[1] = 0.0f; v2.position[2] = hl;
+    v2.position[0] = ex;  v2.position[1] = 0.0f; v2.position[2] = ez;
     v2.normal[0] = 0.0f;  v2.normal[1] = 1.0f;   v2.normal[2] = 0.0f;
     v2.texCoord[0] = 1.0f; v2.texCoord[1] = 1.0f;
 
     // Top-left
-    v3.position[0] = -hw; v3.position[1] = 0.0f; v3.position[2] = hl;
+    v3.position[0] = -ex; v3.position[1] = 0.0f; v3.position[2] = ez;
     v3.normal[0] = 0.0f;  v3.normal[1] = 1.0f;   v3.normal[2] = 0.0f;
     v3.texCoord[0] = 0.0f; v3.texCoord[1] = 1.0f;
 
@@ -216,12 +223,13 @@ void Table::GenerateSurfaceMesh()
     mesh.vertices.push_back(v2);
     mesh.vertices.push_back(v3);
 
+    // Wind CCW when viewed from above (+Y) so the surface is front-facing to the camera
     mesh.indices.push_back(0);
+    mesh.indices.push_back(2);
     mesh.indices.push_back(1);
-    mesh.indices.push_back(2);
     mesh.indices.push_back(0);
-    mesh.indices.push_back(2);
     mesh.indices.push_back(3);
+    mesh.indices.push_back(2);
 
     UploadMesh(mesh, SurfaceVAO, SurfaceVBO, SurfaceEBO, SurfaceIndexCount);
 }
