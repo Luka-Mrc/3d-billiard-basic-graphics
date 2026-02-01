@@ -1,7 +1,7 @@
 #include "../Header/Camera.h"
 
 Camera::Camera()
-    : Position(0.0f, 5.0f, 8.0f)   // Elevated position behind the table
+    : Position(0.0f, 150.0f, 8.0f)   // Elevated position behind the table
     , Target(0.0f, 0.0f, 0.0f)     // Looking at table center
     , Up(0.0f, 1.0f, 0.0f)         // Y is up
     , FOV(Radians(45.0f))          // 45 degree field of view

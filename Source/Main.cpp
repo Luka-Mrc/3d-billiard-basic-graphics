@@ -508,7 +508,7 @@ int main()
 
     // Camera - positioned above and behind the table
     Camera camera;
-    camera.SetPosition(0.0f, 8.0f, 5.5f);
+    camera.SetPosition(0.0f, 4.0f, 5.5f);
     camera.SetTarget(0.0f, 0.0f, -0.5f);
     camera.SetPerspective(45.0f, (float)g_WindowWidth / (float)g_WindowHeight, 0.1f, 100.0f);
     g_CameraPtr = &camera;
@@ -517,12 +517,9 @@ int main()
     Table table;
     table.InitMesh();
 
-    // Balls
+    // Balls - load the shared sphere model once, then create ball instances
+    Ball::LoadModel("Resources/sphere.obj");
     std::vector<Ball*> balls = CreateStandardBallSet(BALL_RADIUS);
-    for (Ball* ball : balls)
-    {
-        ball->InitMesh();
-    }
 
     // Physics
     Physics physics;
@@ -773,6 +770,7 @@ int main()
         delete ball;
     }
     balls.clear();
+    Ball::CleanupModel();
 
     // Delete overlay, aim indicator, shadow map, lamp
     CleanupOverlayQuad();

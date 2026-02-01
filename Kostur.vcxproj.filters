@@ -62,6 +62,12 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
+    <None Include="Shaders\shadow.frag" />
+    <None Include="Shaders\shadow.vert" />
+    <None Include="Shaders\billiard.frag" />
+    <None Include="Shaders\billiard.vert" />
+    <None Include="Shaders\overlay.frag" />
+    <None Include="Shaders\overlay.vert" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Resources\efren_reyes.png">

@@ -6,6 +6,7 @@ x64/
 x86/
 *.log
 *.obj
+!sphere.obj
 *.pdb
 *.ilk
 *.tlog      # Solution User Options file

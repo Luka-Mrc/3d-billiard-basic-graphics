@@ -1,5 +1,9 @@
 #include "../Header/Ball.h"
 #include <cmath>
+#include <iostream>
+
+// Static member initialization
+Model* Ball::s_SphereModel = nullptr;
 
 Ball::Ball(int number, const Vec3& position, float radius, const Vec3& color)
     : Number(number)
@@ -8,62 +12,35 @@ Ball::Ball(int number, const Vec3& position, float radius, const Vec3& color)
     , Radius(radius)
     , Color(color)
     , IsActive(true)
-    , VAO(0)
-    , VBO(0)
-    , EBO(0)
-    , IndexCount(0)
 {
 }
 
 Ball::~Ball()
 {
-    if (VAO != 0)
+}
+
+void Ball::LoadModel(const std::string& path)
+{
+    if (s_SphereModel == nullptr)
     {
-        glDeleteVertexArrays(1, &VAO);
-        glDeleteBuffers(1, &VBO);
-        glDeleteBuffers(1, &EBO);
+        std::cout << "Loading sphere model: " << path << std::endl;
+        s_SphereModel = new Model(path);
+        std::cout << "Sphere model loaded successfully" << std::endl;
     }
 }
 
-void Ball::InitMesh()
+void Ball::CleanupModel()
 {
-    // Generate sphere mesh
-    MeshData mesh = GenerateSphereMesh(Radius, SPHERE_SECTORS, SPHERE_STACKS);
-    IndexCount = (unsigned int)mesh.indices.size();
-
-    // Create VAO
-    glGenVertexArrays(1, &VAO);
-    glBindVertexArray(VAO);
-
-    // Create VBO
-    glGenBuffers(1, &VBO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
-    glBufferData(GL_ARRAY_BUFFER, mesh.vertices.size() * sizeof(Vertex), mesh.vertices.data(), GL_STATIC_DRAW);
-
-    // Create EBO
-    glGenBuffers(1, &EBO);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, EBO);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh.indices.size() * sizeof(unsigned int), mesh.indices.data(), GL_STATIC_DRAW);
-
-    // Position attribute (location = 0)
-    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
-    glEnableVertexAttribArray(0);
-
-    // Normal attribute (location = 1)
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
-    glEnableVertexAttribArray(1);
-
-    // Texture coordinate attribute (location = 2)
-    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoord));
-    glEnableVertexAttribArray(2);
-
-    // Unbind
-    glBindVertexArray(0);
+    if (s_SphereModel != nullptr)
+    {
+        delete s_SphereModel;
+        s_SphereModel = nullptr;
+    }
 }
 
 void Ball::Render(Shader& shader, const Mat4& viewProjection)
 {
-    if (!IsActive || VAO == 0)
+    if (!IsActive || s_SphereModel == nullptr)
         return;
 
     // Calculate MVP matrix
@@ -75,10 +52,8 @@ void Ball::Render(Shader& shader, const Mat4& viewProjection)
     shader.SetMat4("uModel", model.Ptr());
     shader.SetVec3("uObjectColor", Color.Ptr());
 
-    // Draw
-    glBindVertexArray(VAO);
-    glDrawElements(GL_TRIANGLES, IndexCount, GL_UNSIGNED_INT, 0);
-    glBindVertexArray(0);
+    // Draw using the shared 3D model
+    s_SphereModel->Draw(shader);
 }
 
 void Ball::Update(float deltaTime)
@@ -95,7 +70,8 @@ void Ball::Update(float deltaTime)
 
 Mat4 Ball::GetModelMatrix() const
 {
-    return Mat4::Translate(Position);
+    // Translate to position and scale from unit sphere to ball radius
+    return Mat4::Translate(Position) * Mat4::Scale(Radius);
 }
 
 bool Ball::IsMoving() const
@@ -116,10 +92,6 @@ std::vector<Ball*> CreateStandardBallSet(float ballRadius)
 {
     std::vector<Ball*> balls;
 
-    // Standard billiard ball colors (simplified - no stripes)
-    // Colors are approximate RGB values
-
-    // Ball colors: [number] = color
     Vec3 colors[] = {
         Vec3(1.0f, 1.0f, 1.0f),    // 0: Cue ball (white)
         Vec3(1.0f, 0.85f, 0.0f),   // 1: Yellow
@@ -139,30 +111,18 @@ std::vector<Ball*> CreateStandardBallSet(float ballRadius)
         Vec3(0.7f, 0.3f, 0.3f)     // 15: Maroon stripe (lighter)
     };
 
-    // Standard triangle rack formation for 8-ball
-    // The 8-ball should be in the center of the rack
-    // Rack is positioned with apex toward the foot spot
-
     float diameter = ballRadius * 2.0f;
-    float rowSpacing = diameter * 0.866f; // sin(60°) for tight packing
+    float rowSpacing = diameter * 0.866f;
 
-    // Rack starting position (apex of the triangle)
     float rackX = 0.0f;
-    float rackZ = -1.5f; // Toward one end of the table
-
-    // Ball arrangement in rows (front to back)
-    // Row 0: 1 ball (apex)
-    // Row 1: 2 balls
-    // Row 2: 3 balls (8-ball in center)
-    // Row 3: 4 balls
-    // Row 4: 5 balls
+    float rackZ = -1.5f;
 
     int ballOrder[] = {
-        1,              // Row 0
-        2, 3,           // Row 1
-        4, 8, 5,        // Row 2 (8-ball center)
-        6, 7, 9, 10,    // Row 3
-        11, 12, 13, 14, 15  // Row 4
+        1,
+        2, 3,
+        4, 8, 5,
+        6, 7, 9, 10,
+        11, 12, 13, 14, 15
     };
 
     int ballIndex = 0;
@@ -182,7 +142,7 @@ std::vector<Ball*> CreateStandardBallSet(float ballRadius)
         }
     }
 
-    // Add cue ball at the other end of the table
+    // Add cue ball
     Vec3 cuePos(0.0f, ballRadius, 2.5f);
     balls.insert(balls.begin(), new Ball(0, cuePos, ballRadius, colors[0]));
 
