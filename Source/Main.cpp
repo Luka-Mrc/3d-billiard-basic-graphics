@@ -40,8 +40,15 @@
 // CONSTANTS
 // ============================================================================
 
+// ---- Frame Rate Mode ----
+// Comment/uncomment ONE of these:
+#define USE_VSYNC           // Option 1: VSync - locks to monitor refresh rate (e.g. 60Hz)
+//#define USE_MANUAL_FPS    // Option 2: Manual 75 FPS limiter (sleep-based)
+
+#ifdef USE_MANUAL_FPS
 const float TARGET_FPS = 75.0f;
 const float TARGET_FRAME_TIME = 1.0f / TARGET_FPS;  // ~13.33ms
+#endif
 
 const float BALL_RADIUS = 0.057f;  // Standard pool ball radius (scaled)
 const float MIN_SHOT_POWER = 1.0f;
@@ -465,8 +472,11 @@ int main()
     glfwSetCursorPosCallback(window, CursorPositionCallback);
     glfwSetScrollCallback(window, ScrollCallback);
 
-    // Disable vsync (we'll do our own frame limiting)
-    glfwSwapInterval(0);
+#ifdef USE_VSYNC
+    glfwSwapInterval(1);   // Sync to monitor refresh rate
+#else
+    glfwSwapInterval(0);   // No vsync, we handle timing manually
+#endif
 
     // Initialize GLEW
     glewExperimental = GL_TRUE;
@@ -582,6 +592,10 @@ int main()
         auto currentTime = std::chrono::high_resolution_clock::now();
         deltaTime = std::chrono::duration<float>(currentTime - lastTime).count();
         lastTime = currentTime;
+
+        // Cap deltaTime to prevent physics explosions on frame spikes (alt-tab, first frame, etc.)
+        if (deltaTime > 0.05f)
+            deltaTime = 0.05f;
 
         // ============ Input ============
         glfwPollEvents();
@@ -777,15 +791,15 @@ int main()
         // ============ Swap & Frame Limit ============
         glfwSwapBuffers(window);
 
-        // Frame limiter to exactly 75 FPS
+#ifdef USE_MANUAL_FPS
+        // Sleep until target frame time is reached
         auto frameEnd = std::chrono::high_resolution_clock::now();
         float frameTime = std::chrono::duration<float>(frameEnd - currentTime).count();
-
         if (frameTime < TARGET_FRAME_TIME)
         {
-            float sleepTime = TARGET_FRAME_TIME - frameTime;
-            std::this_thread::sleep_for(std::chrono::duration<float>(sleepTime));
+            std::this_thread::sleep_for(std::chrono::duration<float>(TARGET_FRAME_TIME - frameTime));
         }
+#endif
     }
 
     // ==================== Cleanup ====================
