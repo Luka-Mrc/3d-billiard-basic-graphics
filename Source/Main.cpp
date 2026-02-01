@@ -10,7 +10,8 @@
  * - SPACE: Hit cue ball (when balls stopped)
  * - Arrow keys: Aim cue direction
  * - W/S: Adjust shot power
- * - Scroll: changes FOV
+ * - Scroll: Zoom in/out (changes FOV)
+ * - F11: Toggle fullscreen / borderless windowed
  *
  * Requirements met:
  * - Modern OpenGL (VAO, VBO, shaders)
@@ -65,6 +66,9 @@ bool g_FaceCullingEnabled = true;
 // Input state
 bool g_KeyDPressed = false;
 bool g_KeyCPressed = false;
+
+// Window mode: true = fullscreen, false = borderless windowed
+bool g_IsFullscreen = true;
 
 // Mouse drag shooting state
 bool g_IsDragging = false;
@@ -294,6 +298,27 @@ void KeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods
         std::cout << "Face culling: " << (g_FaceCullingEnabled ? "ON" : "OFF") << std::endl;
     }
     g_KeyCPressed = (key == GLFW_KEY_C && action != GLFW_RELEASE);
+
+    // F11 to toggle fullscreen / borderless windowed
+    if (key == GLFW_KEY_F11 && action == GLFW_PRESS)
+    {
+        GLFWmonitor* monitor = glfwGetPrimaryMonitor();
+        const GLFWvidmode* mode = glfwGetVideoMode(monitor);
+
+        g_IsFullscreen = !g_IsFullscreen;
+
+        if (g_IsFullscreen)
+        {
+            glfwSetWindowMonitor(window, monitor, 0, 0, mode->width, mode->height, mode->refreshRate);
+        }
+        else
+        {
+            glfwSetWindowMonitor(window, NULL, 0, 0, mode->width, mode->height, 0);
+            glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_FALSE);
+        }
+
+        std::cout << "Window mode: " << (g_IsFullscreen ? "Fullscreen" : "Borderless") << std::endl;
+    }
 }
 
 void MouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
