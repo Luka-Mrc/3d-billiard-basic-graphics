@@ -269,6 +269,8 @@ void Physics::CheckPockets(std::vector<Ball*>& balls, const Table& table)
         for (int i = 0; i < Table::NUM_POCKETS; i++)
         {
             // Distance check on XZ plane only
+            // Ball is potted when its center enters the pocket circle,
+            // which corresponds to ~50% of the ball being over the hole
             float dx = ball->Position.x - pockets[i].x;
             float dz = ball->Position.z - pockets[i].z;
             float distSq = dx * dx + dz * dz;
@@ -297,7 +299,9 @@ bool Physics::IsInPocketGap(const Vec3& pos, const Table& table) const
 {
     const Vec3* pockets = table.GetPocketPositions();
     float pr = table.GetPocketRadius();
-    float gapThreshold = pr * 2.0f;
+    // Cushion gap matches pocket radius; use 1.5x for margin so balls
+    // can smoothly enter pockets without catching on cushion edges
+    float gapThreshold = pr * 1.5f;
 
     for (int i = 0; i < Table::NUM_POCKETS; i++)
     {

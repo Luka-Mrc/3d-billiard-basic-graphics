@@ -109,6 +109,7 @@ struct Mat4
     static Mat4 RotateY(float radians);
     static Mat4 RotateZ(float radians);
     static Mat4 Perspective(float fovY, float aspect, float nearPlane, float farPlane);
+    static Mat4 Ortho(float left, float right, float bottom, float top, float nearPlane, float farPlane);
     static Mat4 LookAt(const Vec3& eye, const Vec3& target, const Vec3& up);
 
     Mat4 Inverse() const;

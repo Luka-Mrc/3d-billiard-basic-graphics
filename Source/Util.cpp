@@ -122,6 +122,22 @@ Mat4 Mat4::Perspective(float fovY, float aspect, float nearPlane, float farPlane
     return result;
 }
 
+Mat4 Mat4::Ortho(float left, float right, float bottom, float top, float nearPlane, float farPlane)
+{
+    Mat4 result;
+    for (int i = 0; i < 16; i++) result.m[i] = 0.0f;
+
+    result.m[0]  =  2.0f / (right - left);
+    result.m[5]  =  2.0f / (top - bottom);
+    result.m[10] = -2.0f / (farPlane - nearPlane);
+    result.m[12] = -(right + left) / (right - left);
+    result.m[13] = -(top + bottom) / (top - bottom);
+    result.m[14] = -(farPlane + nearPlane) / (farPlane - nearPlane);
+    result.m[15] =  1.0f;
+
+    return result;
+}
+
 Mat4 Mat4::LookAt(const Vec3& eye, const Vec3& target, const Vec3& up)
 {
     Vec3 f = (target - eye).Normalized();  // Forward

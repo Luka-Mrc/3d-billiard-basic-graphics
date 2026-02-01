@@ -121,11 +121,17 @@ private:
     GLuint FrameEBO;
     unsigned int FrameIndexCount;
 
-    // OpenGL objects for pocket visuals
+    // OpenGL objects for pocket visuals (dark circles)
     GLuint PocketVAO;
     GLuint PocketVBO;
     GLuint PocketEBO;
     unsigned int PocketIndexCount;
+
+    // OpenGL objects for pocket rims (curved walls around pockets)
+    GLuint PocketRimVAO;
+    GLuint PocketRimVBO;
+    GLuint PocketRimEBO;
+    unsigned int PocketRimIndexCount;
 
     /**
      * Generate mesh for playing surface
@@ -146,6 +152,11 @@ private:
      * Generate mesh for pocket visuals (dark circles)
      */
     void GeneratePocketMesh();
+
+    /**
+     * Generate circular rim walls around each pocket
+     */
+    void GeneratePocketRimMesh();
 
     /**
      * Helper to upload mesh data to GPU

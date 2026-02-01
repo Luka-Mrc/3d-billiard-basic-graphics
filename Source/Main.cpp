@@ -92,6 +92,23 @@ GLuint g_AimVBO = 0;
 GLuint g_AimEBO = 0;
 unsigned int g_AimIndexCount = 0;
 
+// ============================================================================
+// SHADOW MAP
+// ============================================================================
+
+const int SHADOW_MAP_SIZE = 2048;
+GLuint g_ShadowMapFBO = 0;
+GLuint g_ShadowMapTexture = 0;
+
+// ============================================================================
+// LAMP MESH
+// ============================================================================
+
+GLuint g_LampVAO = 0;
+GLuint g_LampVBO = 0;
+GLuint g_LampEBO = 0;
+unsigned int g_LampIndexCount = 0;
+
 void InitOverlayQuad()
 {
     MeshData quad = GenerateQuadMesh();
@@ -165,6 +182,73 @@ void CleanupAimIndicator()
         glDeleteVertexArrays(1, &g_AimVAO);
         glDeleteBuffers(1, &g_AimVBO);
         glDeleteBuffers(1, &g_AimEBO);
+    }
+}
+
+void InitShadowMap()
+{
+    glGenFramebuffers(1, &g_ShadowMapFBO);
+
+    glGenTextures(1, &g_ShadowMapTexture);
+    glBindTexture(GL_TEXTURE_2D, g_ShadowMapTexture);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE,
+                 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+    float borderColor[] = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+    glBindFramebuffer(GL_FRAMEBUFFER, g_ShadowMapFBO);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, g_ShadowMapTexture, 0);
+    glDrawBuffer(GL_NONE);
+    glReadBuffer(GL_NONE);
+    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+}
+
+void CleanupShadowMap()
+{
+    if (g_ShadowMapFBO != 0)
+        glDeleteFramebuffers(1, &g_ShadowMapFBO);
+    if (g_ShadowMapTexture != 0)
+        glDeleteTextures(1, &g_ShadowMapTexture);
+}
+
+void InitLampMesh()
+{
+    // Rectangular lamp panel above the table
+    MeshData box = GenerateBoxMesh(1.5f, 0.04f, 2.5f);
+    g_LampIndexCount = (unsigned int)box.indices.size();
+
+    glGenVertexArrays(1, &g_LampVAO);
+    glBindVertexArray(g_LampVAO);
+
+    glGenBuffers(1, &g_LampVBO);
+    glBindBuffer(GL_ARRAY_BUFFER, g_LampVBO);
+    glBufferData(GL_ARRAY_BUFFER, box.vertices.size() * sizeof(Vertex), box.vertices.data(), GL_STATIC_DRAW);
+
+    glGenBuffers(1, &g_LampEBO);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, g_LampEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, box.indices.size() * sizeof(unsigned int), box.indices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, position));
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, normal));
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void*)offsetof(Vertex, texCoord));
+    glEnableVertexAttribArray(2);
+
+    glBindVertexArray(0);
+}
+
+void CleanupLampMesh()
+{
+    if (g_LampVAO != 0)
+    {
+        glDeleteVertexArrays(1, &g_LampVAO);
+        glDeleteBuffers(1, &g_LampVBO);
+        glDeleteBuffers(1, &g_LampEBO);
     }
 }
 
@@ -405,6 +489,14 @@ int main()
         return -1;
     }
 
+    Shader shadowShader;
+    if (!shadowShader.Load("Shaders/shadow.vert", "Shaders/shadow.frag"))
+    {
+        std::cerr << "Failed to load shadow shader" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
     // ==================== Load Textures ====================
     GLuint overlayTexture = LoadTexture("Resources/efren_reyes.png", true);
     if (overlayTexture == 0)
@@ -416,8 +508,8 @@ int main()
 
     // Camera - positioned above and behind the table
     Camera camera;
-    camera.SetPosition(0.0f, 6.0f, 5.0f);
-    camera.SetTarget(0.0f, 0.0f, 0.0f);
+    camera.SetPosition(0.0f, 8.0f, 5.5f);
+    camera.SetTarget(0.0f, 0.0f, -0.5f);
     camera.SetPerspective(45.0f, (float)g_WindowWidth / (float)g_WindowHeight, 0.1f, 100.0f);
     g_CameraPtr = &camera;
 
@@ -435,13 +527,20 @@ int main()
     // Physics
     Physics physics;
 
-    // Overlay quad and aim indicator
+    // Overlay quad, aim indicator, shadow map, lamp
     InitOverlayQuad();
     InitAimIndicator();
+    InitShadowMap();
+    InitLampMesh();
 
     // ==================== Lighting Setup ====================
-    Vec3 lightDir = Vec3(0.3f, 1.0f, 0.5f).Normalized();  // Light from above-front
-    Vec3 lightColor(1.0f, 1.0f, 0.95f);  // Slightly warm white
+    Vec3 lightPos(0.0f, 4.0f, 0.0f);     // Overhead lamp position (raised for even coverage)
+    Vec3 lightColor(1.0f, 0.97f, 0.9f);  // Warm white
+
+    // Light-space matrix for shadow mapping (orthographic from above)
+    Mat4 lightView = Mat4::LookAt(lightPos, Vec3(0.0f, 0.0f, 0.0f), Vec3(0.0f, 0.0f, -1.0f));
+    Mat4 lightProjection = Mat4::Ortho(-2.5f, 2.5f, -4.0f, 4.0f, 0.1f, 10.0f);
+    Mat4 lightSpaceMatrix = lightProjection * lightView;
 
     // Track whether mouse was dragging last frame (to detect release)
     bool wasDragging = false;
@@ -505,25 +604,49 @@ int main()
         // Update camera aspect ratio if window was resized
         camera.SetAspectRatio((float)g_WindowWidth / (float)g_WindowHeight);
 
-        // ============ Render ============
-        // Clear buffers
-        glClearColor(0.1f, 0.1f, 0.15f, 1.0f);  // Dark blue-gray background
+        // ============ Shadow Pass ============
+        // Render balls from the light's perspective into the shadow map
+        glViewport(0, 0, SHADOW_MAP_SIZE, SHADOW_MAP_SIZE);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_ShadowMapFBO);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        glEnable(GL_DEPTH_TEST);
+
+        shadowShader.Use();
+        for (Ball* ball : balls)
+        {
+            if (!ball->IsActive) continue;
+            Mat4 model = ball->GetModelMatrix();
+            Mat4 shadowMVP = lightSpaceMatrix * model;
+            shadowShader.SetMat4("uMVP", shadowMVP.Ptr());
+            shadowShader.SetMat4("uModel", model.Ptr());
+            ball->Render(shadowShader, lightSpaceMatrix);
+        }
+
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, g_WindowWidth, g_WindowHeight);
+
+        // ============ Main Render ============
+        glClearColor(0.08f, 0.08f, 0.12f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-        // Apply render state (depth test, face culling)
         ApplyRenderState();
 
-        // Get view-projection matrix
         Mat4 viewProjection = camera.GetViewProjectionMatrix();
 
         // Use billiard shader
         billiardShader.Use();
 
-        // Set lighting uniforms
-        billiardShader.SetVec3("uLightDir", lightDir.Ptr());
+        // Bind shadow map to texture unit 1
+        glActiveTexture(GL_TEXTURE1);
+        glBindTexture(GL_TEXTURE_2D, g_ShadowMapTexture);
+        billiardShader.SetInt("uShadowMap", 1);
+
+        // Set lighting uniforms (point light)
+        billiardShader.SetVec3("uLightPos", lightPos.Ptr());
         billiardShader.SetVec3("uLightColor", lightColor.Ptr());
         billiardShader.SetVec3("uViewPos", camera.Position.Ptr());
-        billiardShader.SetFloat("uAmbient", 0.3f);
+        billiardShader.SetMat4("uLightSpaceMatrix", lightSpaceMatrix.Ptr());
+        billiardShader.SetFloat("uAmbient", 0.25f);
         billiardShader.SetFloat("uSpecular", 0.5f);
         billiardShader.SetFloat("uShininess", 32.0f);
 
@@ -534,6 +657,27 @@ int main()
         for (Ball* ball : balls)
         {
             ball->Render(billiardShader, viewProjection);
+        }
+
+        // Render lamp (emissive - full ambient, no shadow)
+        {
+            billiardShader.SetFloat("uAmbient", 1.0f);
+            billiardShader.SetFloat("uSpecular", 0.0f);
+            Vec3 lampColor(1.0f, 0.95f, 0.85f);
+            billiardShader.SetVec3("uObjectColor", lampColor.Ptr());
+
+            Mat4 lampModel = Mat4::Translate(0.0f, 4.0f, 0.0f);
+            Mat4 lampMVP = viewProjection * lampModel;
+            billiardShader.SetMat4("uMVP", lampMVP.Ptr());
+            billiardShader.SetMat4("uModel", lampModel.Ptr());
+
+            glBindVertexArray(g_LampVAO);
+            glDrawElements(GL_TRIANGLES, g_LampIndexCount, GL_UNSIGNED_INT, 0);
+            glBindVertexArray(0);
+
+            // Restore lighting for aim indicator
+            billiardShader.SetFloat("uAmbient", 0.25f);
+            billiardShader.SetFloat("uSpecular", 0.5f);
         }
 
         // Render aim line when dragging and balls are stopped
@@ -581,7 +725,7 @@ int main()
                     float lineLen = 0.3f + powerFrac * 0.4f;
 
                     Mat4 aimModel = Mat4::Translate(cueBall->Position + aimDir * (cueBall->Radius + lineLen / 2.0f + 0.02f)) *
-                                    Mat4::RotateY(-aimAngle) *
+                                    Mat4::RotateY(aimAngle) *
                                     Mat4::Scale(0.015f, 0.015f, lineLen);
                     Mat4 aimMVP = viewProjection * aimModel;
 
@@ -630,9 +774,11 @@ int main()
     }
     balls.clear();
 
-    // Delete overlay and aim indicator
+    // Delete overlay, aim indicator, shadow map, lamp
     CleanupOverlayQuad();
     CleanupAimIndicator();
+    CleanupShadowMap();
+    CleanupLampMesh();
 
     // Delete texture
     if (overlayTexture != 0)
