@@ -135,13 +135,6 @@ void Table::Render(Shader& shader, const Mat4& viewProjection)
         glDrawElements(GL_TRIANGLES, PocketIndexCount, GL_UNSIGNED_INT, 0);
     }
 
-    // Render pocket rims (circular walls around pockets)
-    shader.SetVec3("uObjectColor", CushionColor.Ptr());
-    shader.SetMat4("uMVP", mvp.Ptr());
-    shader.SetMat4("uModel", model.Ptr());
-    glBindVertexArray(PocketRimVAO);
-    glDrawElements(GL_TRIANGLES, PocketRimIndexCount, GL_UNSIGNED_INT, 0);
-
     glBindVertexArray(0);
 }
 
