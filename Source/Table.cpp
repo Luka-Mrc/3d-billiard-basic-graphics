@@ -237,7 +237,7 @@ void Table::GenerateCushionMesh()
     float cw = CushionWidth;
 
     // Helper lambda to add a box to the mesh
-    auto addBox = [&mesh](float minX, float minY, float minZ, float maxX, float maxY, float maxZ)
+    auto addBox = [&mesh](float minX, float minY, float minZ, float maxX, float maxY, float maxZ, int skipFaces = 0)
     {
         unsigned int baseIndex = (unsigned int)mesh.vertices.size();
 
@@ -256,16 +256,18 @@ void Table::GenerateCushionMesh()
         // 6 faces with normals
         struct Face { int v[4]; Vec3 normal; };
         Face faces[6] = {
-            { {4, 5, 6, 7}, Vec3(0, 0, 1) },   // Front (+Z)
-            { {1, 0, 3, 2}, Vec3(0, 0, -1) },  // Back (-Z)
-            { {5, 1, 2, 6}, Vec3(1, 0, 0) },   // Right (+X)
-            { {0, 4, 7, 3}, Vec3(-1, 0, 0) },  // Left (-X)
-            { {7, 6, 2, 3}, Vec3(0, 1, 0) },   // Top (+Y)
-            { {0, 1, 5, 4}, Vec3(0, -1, 0) }   // Bottom (-Y)
+            { {4, 5, 6, 7}, Vec3(0, 0, 1) },   // 0: Front (+Z)
+            { {1, 0, 3, 2}, Vec3(0, 0, -1) },  // 1: Back (-Z)
+            { {5, 1, 2, 6}, Vec3(1, 0, 0) },   // 2: Right (+X)
+            { {0, 4, 7, 3}, Vec3(-1, 0, 0) },  // 3: Left (-X)
+            { {7, 6, 2, 3}, Vec3(0, 1, 0) },   // 4: Top (+Y)
+            { {0, 1, 5, 4}, Vec3(0, -1, 0) }   // 5: Bottom (-Y)
         };
 
         for (int f = 0; f < 6; f++)
         {
+            if (skipFaces & (1 << f)) continue;
+
             unsigned int faceBase = (unsigned int)mesh.vertices.size();
 
             for (int i = 0; i < 4; i++)
@@ -296,31 +298,32 @@ void Table::GenerateCushionMesh()
     // Each gap starts at (pocket center + PocketRadius) along the cushion.
     float pr = PocketRadius;
 
+
     // Left cushion (-X side): 2 segments with gaps at corners + side pocket
     float lz1s = PocketPositions[0].z + pr;  // after back-left pocket
     float lz1e = PocketPositions[4].z - pr;  // before left side pocket
     float lz2s = PocketPositions[4].z + pr;  // after left side pocket
     float lz2e = PocketPositions[2].z - pr;  // before front-left pocket
-    addBox(-hw - cw, 0, lz1s, -hw, ch, lz1e);
-    addBox(-hw - cw, 0, lz2s, -hw, ch, lz2e);
+    addBox(-hw - cw, 0, lz1s, -hw, ch, lz1e, 32 | 8);
+    addBox(-hw - cw, 0, lz2s, -hw, ch, lz2e, 32 | 8);
 
     // Right cushion (+X side)
     float rz1s = PocketPositions[1].z + pr;
     float rz1e = PocketPositions[5].z - pr;
     float rz2s = PocketPositions[5].z + pr;
     float rz2e = PocketPositions[3].z - pr;
-    addBox(hw, 0, rz1s, hw + cw, ch, rz1e);
-    addBox(hw, 0, rz2s, hw + cw, ch, rz2e);
+    addBox(hw, 0, rz1s, hw + cw, ch, rz1e, 32 | 4);
+    addBox(hw, 0, rz2s, hw + cw, ch, rz2e, 32 | 4);
 
     // Back cushion (-Z side): one segment between corner pockets
     float bxs = PocketPositions[0].x + pr;
     float bxe = PocketPositions[1].x - pr;
-    addBox(bxs, 0, -hl - cw, bxe, ch, -hl);
+    addBox(bxs, 0, -hl - cw, bxe, ch, -hl, 32 | 2);
 
     // Front cushion (+Z side)
     float fxs = PocketPositions[2].x + pr;
     float fxe = PocketPositions[3].x - pr;
-    addBox(fxs, 0, hl, fxe, ch, hl + cw);
+    addBox(fxs, 0, hl, fxe, ch, hl + cw, 32 | 1);
 
     UploadMesh(mesh, CushionVAO, CushionVBO, CushionEBO, CushionIndexCount);
 }
@@ -337,7 +340,7 @@ void Table::GenerateFrameMesh()
     float frameDepth = 0.1f;
 
     // Helper lambda (same as cushion)
-    auto addBox = [&mesh](float minX, float minY, float minZ, float maxX, float maxY, float maxZ)
+    auto addBox = [&mesh](float minX, float minY, float minZ, float maxX, float maxY, float maxZ, int skipFaces = 0)
     {
         Vec3 corners[8] = {
             Vec3(minX, minY, minZ),
@@ -362,6 +365,8 @@ void Table::GenerateFrameMesh()
 
         for (int f = 0; f < 6; f++)
         {
+            if (skipFaces & (1 << f)) continue;
+
             unsigned int faceBase = (unsigned int)mesh.vertices.size();
 
             for (int i = 0; i < 4; i++)
@@ -395,17 +400,18 @@ void Table::GenerateFrameMesh()
     float frameBottom = -frameDepth;
     float frameTop = ch;
 
-    // Left frame
-    addBox(-outerX, frameBottom, -outerZ, -hw - cw, frameTop, outerZ);
+
+    // Left frame (Z between back and front frames, skip front+back faces at junctions)
+    addBox(-outerX, frameBottom, -hl - cw, -hw - cw, frameTop, hl + cw, 1 | 2);
 
     // Right frame
-    addBox(hw + cw, frameBottom, -outerZ, outerX, frameTop, outerZ);
+    addBox(hw + cw, frameBottom, -hl - cw, outerX, frameTop, hl + cw, 1 | 2);
 
-    // Back frame (between left and right)
-    addBox(-hw - cw, frameBottom, -outerZ, hw + cw, frameTop, -hl - cw);
+    // Back frame (full X width, fills corners)
+    addBox(-outerX, frameBottom, -outerZ, outerX, frameTop, -hl - cw);
 
-    // Front frame (between left and right)
-    addBox(-hw - cw, frameBottom, hl + cw, hw + cw, frameTop, outerZ);
+    // Front frame (full X width, fills corners)
+    addBox(-outerX, frameBottom, hl + cw, outerX, frameTop, outerZ);
 
     UploadMesh(mesh, FrameVAO, FrameVBO, FrameEBO, FrameIndexCount);
 }
