@@ -154,10 +154,10 @@
     <None Include="Shaders\shadow.vert" />
   </ItemGroup>
   <ItemGroup>
-    <Image Include="Resources\efren_reyes.png" />
+    <None Include="Resources\sphere.obj" />
   </ItemGroup>
   <ItemGroup>
-    <None Include="Resources\sphere.obj" />
+    <Image Include="Resources\efren_reyes.png" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

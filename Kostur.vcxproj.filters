@@ -59,6 +59,12 @@
     <ClInclude Include="Header\Table.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="Header\Mesh.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="Header\Model.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
@@ -68,6 +74,7 @@
     <None Include="Shaders\billiard.vert" />
     <None Include="Shaders\overlay.frag" />
     <None Include="Shaders\overlay.vert" />
+    <None Include="Resources\sphere.obj" />
   </ItemGroup>
   <ItemGroup>
     <Image Include="Resources\efren_reyes.png">

@@ -432,12 +432,12 @@ MeshData GenerateDiscMesh(float radius, int segments)
         mesh.vertices.push_back(v);
     }
 
-    // Triangle fan indices
+    // Triangle fan indices (wound CCW when viewed from +Y)
     for (int i = 1; i <= segments; i++)
     {
         mesh.indices.push_back(0);
-        mesh.indices.push_back(i);
         mesh.indices.push_back(i + 1);
+        mesh.indices.push_back(i);
     }
 
     return mesh;

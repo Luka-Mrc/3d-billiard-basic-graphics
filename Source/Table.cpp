@@ -495,13 +495,13 @@ void Table::GeneratePocketRimMesh()
             mesh.vertices.push_back(v2);
             mesh.vertices.push_back(v3);
 
-            // Two triangles per quad (same winding as box cushion code)
+            // Two triangles per quad (wound CCW when viewed from outside the pocket)
             mesh.indices.push_back(base + 0);
+            mesh.indices.push_back(base + 2);
             mesh.indices.push_back(base + 1);
-            mesh.indices.push_back(base + 2);
             mesh.indices.push_back(base + 0);
-            mesh.indices.push_back(base + 2);
             mesh.indices.push_back(base + 3);
+            mesh.indices.push_back(base + 2);
         }
     }
 
