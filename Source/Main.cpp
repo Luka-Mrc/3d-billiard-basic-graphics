@@ -61,7 +61,7 @@ const float MAX_SHOT_POWER = 8.0f;
 
 // Rendering toggles
 bool g_DepthTestEnabled = true;
-bool g_FaceCullingEnabled = true;
+bool g_FaceCullingEnabled = false;
 
 // Input state
 bool g_KeyDPressed = false;
